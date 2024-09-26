@@ -42,7 +42,7 @@ jobs:
 
       if: runner.os == 'Linux'
 
-        with:
+      with:  # 缩进调整
         key: ${{ matrix.os }}-${{ matrix.enable_ui }}
 
     - uses: seanmiddleditch/gha-setup-ninja@master
