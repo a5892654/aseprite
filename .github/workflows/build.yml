@@ -4,10 +4,11 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-latest, ubuntu-latest]
         build_type: [Release]
         enable_ui: [on]
     steps:
@@ -15,45 +16,88 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Install 7-Zip
-        run: choco install 7zip -y
-        shell: pwsh
+      - name: Set up CCache (Linux only)
+        uses: hendrikmuhs/ccache-action@v1
+        if: ${{ runner.os == 'Linux' }}
+        with:
+          key: ${{ matrix.os }}-${{ matrix.enable_ui }}
 
       - uses: seanmiddleditch/gha-setup-ninja@master
 
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up MSVC (Windows only)
+        uses: ilammy/msvc-dev-cmd@v1
+        if: ${{ runner.os == 'Windows' }}
 
-      - name: Install Dependencies
-        shell: pwsh
+      - name: Install CMake
         run: |
-          # 在 Windows 上安装所需的依赖项（如果有）
-          # 例如，安装特定的库或工具
-          Write-Output "No additional dependencies to install on Windows."
+          if (${{ runner.os }} -eq 'Windows') {
+            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+          } else {
+            sudo apt-get update
+            sudo apt-get install -y cmake
+          }
+        shell: pwsh
+
+      - name: Install Dependencies (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libx11-dev libxcursor-dev libxi-dev
+        shell: bash
+
+      - name: Install 7-Zip (Windows only)
+        if: ${{ runner.os == 'Windows' }}
+        run: choco install 7zip -y
+        shell: pwsh
+
+      - name: Verify 7-Zip Installation (Windows only)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          & "C:\Program Files\7-Zip\7z.exe" --version
+        shell: pwsh
 
       - name: Generating Makefiles
-        shell: pwsh
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
         run: |
-          $enable_ccache = "off"
-          Invoke-WebRequest -Uri "https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip" -OutFile "skia.zip"
-          & "C:\Program Files\7-Zip\7z.exe" x skia.zip
+          if ($env:OS -eq "Windows_NT") {
+            $enable_ccache = "off"
+          } else {
+            enable_ccache=on
+          }
+          curl -L https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip --output skia.zip
+          if ($env:OS -eq "Windows_NT") {
+            & "C:\Program Files\7-Zip\7z.exe" x skia.zip
+          } else {
+            7z x skia.zip
+          }
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
             -DENABLE_UI=${{ matrix.enable_ui }} `
-            -DENABLE_CCACHE=$enable_ccache `
+            -DENABLE_CCACHE=${enable_ccache} `
             -DLAF_BACKEND=skia `
             -DSKIA_DIR=./skia `
             -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 `
             -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
 
+      - name: List Build Directory Contents
+        run: |
+          ls -R build
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+
       - name: Compiling
-        shell: pwsh
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
         run: |
           cd build
           ninja
+
+      - name: List Build Output
+        run: |
+          ls -R build/bin
+        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
 
       - uses: actions/upload-artifact@v3
         with:
           name: aseprite
           path: |
-            build/bin/data
-            build/bin/aseprite.exe
+            ${{ runner.os == 'Windows' && 'build\\bin\\data' || 'build/bin/data' }}
+            ${{ runner.os == 'Windows' && 'build\\bin\\aseprite.exe' || 'build/bin/aseprite' }}
