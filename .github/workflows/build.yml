@@ -12,7 +12,7 @@ jobs:
         build_type: [Release]
         enable_ui: [on]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3.5.0
         with:
           submodules: 'recursive'
 
@@ -30,7 +30,7 @@ jobs:
 
       - name: Install CMake
         run: |
-          if (${{ runner.os }} -eq 'Windows') {
+          if (${{ runner.os }} == 'Windows') {
             choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
           } else {
             sudo apt-get update
@@ -56,48 +56,86 @@ jobs:
           & "C:\Program Files\7-Zip\7z.exe" --version
         shell: pwsh
 
-      - name: Generating Makefiles
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+      - name: Generating Makefiles (Linux)
+        if: ${{ runner.os == 'Linux' }}
         run: |
-          if ($env:OS -eq "Windows_NT") {
-            $enable_ccache = "off"
-          } else {
-            enable_ccache=on
-          }
+          export enable_ccache=on
           curl -L https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip --output skia.zip
-          if ($env:OS -eq "Windows_NT") {
-            & "C:\Program Files\7-Zip\7z.exe" x skia.zip
-          } else {
-            7z x skia.zip
-          }
+          7z x skia.zip
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DENABLE_UI=${{ matrix.enable_ui }} \
+            -DENABLE_CCACHE=$enable_ccache \
+            -DLAF_BACKEND=skia \
+            -DSKIA_DIR=./skia \
+            -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 \
+            -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
+        shell: bash
+
+      - name: Generating Makefiles (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          $env:enable_ccache = "off"
+          Invoke-WebRequest -Uri "https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip" -OutFile "skia.zip"
+          & "C:\Program Files\7-Zip\7z.exe" x skia.zip
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
             -DENABLE_UI=${{ matrix.enable_ui }} `
-            -DENABLE_CCACHE=${enable_ccache} `
+            -DENABLE_CCACHE=$env:enable_ccache `
             -DLAF_BACKEND=skia `
             -DSKIA_DIR=./skia `
             -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 `
             -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
+        shell: pwsh
 
-      - name: List Build Directory Contents
-        run: |
-          ls -R build
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+      - name: List Build Directory Contents (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        run: ls -R build
+        shell: bash
 
-      - name: Compiling
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+      - name: List Build Directory Contents (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: Get-ChildItem -Recurse build
+        shell: pwsh
+
+      - name: Compiling (Linux)
+        if: ${{ runner.os == 'Linux' }}
         run: |
           cd build
           ninja
+        shell: bash
 
-      - name: List Build Output
+      - name: Compiling (Windows)
+        if: ${{ runner.os == 'Windows' }}
         run: |
-          ls -R build/bin
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+          cd build
+          ninja
+        shell: pwsh
 
-      - uses: actions/upload-artifact@v3
+      - name: List Build Output (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        run: ls -R build/bin
+        shell: bash
+
+      - name: List Build Output (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: Get-ChildItem -Recurse build\bin
+        shell: pwsh
+
+      - name: Upload Artifact (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        uses: actions/upload-artifact@v3
         with:
           name: aseprite
           path: |
-            ${{ runner.os == 'Windows' && 'build\\bin\\data' || 'build/bin/data' }}
-            ${{ runner.os == 'Windows' && 'build\\bin\\aseprite.exe' || 'build/bin/aseprite' }}
+            build/bin/data
+            build/bin/aseprite
+
+      - name: Upload Artifact (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: aseprite
+          path: |
+            build\bin\data
+            build\bin\aseprite.exe
