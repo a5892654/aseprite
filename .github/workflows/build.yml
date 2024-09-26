@@ -3,139 +3,122 @@ name: build
 on: [push, pull_request]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-        build_type: [Release]
-        enable_ui: [on]
-    steps:
-      - uses: actions/checkout@v3.5.0
+
+  build:
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+
+        os: [windows-latest]
+
+        build_type: [Release]
+
+        enable_ui: [on]
+
+        include:
+
+          - os: windows-latest
+
+            build_type: Release
+
+            enable_ui: on
+
+    steps:
+
+    - uses: actions/checkout@v3
+
+      with:
+
+        submodules: 'recursive'
+
+    - name: ccache
+
+      uses: hendrikmuhs/ccache-action@v1
+
+      if: runner.os == 'Linux'
+
         with:
-          submodules: 'recursive'
+        key: ${{ matrix.os }}-${{ matrix.enable_ui }}
 
-      - name: Set up CCache (Linux only)
-        uses: hendrikmuhs/ccache-action@v1
-        if: ${{ runner.os == 'Linux' }}
-        with:
-          key: ${{ matrix.os }}-${{ matrix.enable_ui }}
+    - uses: seanmiddleditch/gha-setup-ninja@master
 
-      - uses: seanmiddleditch/gha-setup-ninja@master
+    - uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Set up MSVC (Windows only)
-        uses: ilammy/msvc-dev-cmd@v1
-        if: ${{ runner.os == 'Windows' }}
+      if: runner.os == 'Windows'
 
-      - name: Install CMake
-        run: |
-          if (${{ runner.os }} == 'Windows') {
-            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-          } else {
-            sudo apt-get update
-            sudo apt-get install -y cmake
-          }
-        shell: pwsh
+    - name: Install Dependencies
 
-      - name: Install Dependencies (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y libx11-dev libxcursor-dev libxi-dev
-        shell: bash
+      shell: bash
 
-      - name: Install 7-Zip (Windows only)
-        if: ${{ runner.os == 'Windows' }}
-        run: choco install 7zip -y
-        shell: pwsh
+      run: |
 
-      - name: Verify 7-Zip Installation (Windows only)
-        if: ${{ runner.os == 'Windows' }}
-        run: |
-          & "C:\Program Files\7-Zip\7z.exe" --version
-        shell: pwsh
+        if [[ "${{ runner.os }}" == "Linux" ]] ; then
 
-      - name: Generating Makefiles (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        run: |
-          export enable_ccache=on
-          curl -L https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip --output skia.zip
-          7z x skia.zip
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DENABLE_UI=${{ matrix.enable_ui }} \
-            -DENABLE_CCACHE=$enable_ccache \
-            -DLAF_BACKEND=skia \
-            -DSKIA_DIR=./skia \
-            -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 \
-            -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
-        shell: bash
+          sudo apt-get update -qq
 
-      - name: Generating Makefiles (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        run: |
-          $env:enable_ccache = "off"
-          Invoke-WebRequest -Uri "https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip" -OutFile "skia.zip"
-          & "C:\Program Files\7-Zip\7z.exe" x skia.zip
-          cmake -S . -B build -G Ninja `
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
-            -DENABLE_UI=${{ matrix.enable_ui }} `
-            -DENABLE_CCACHE=$env:enable_ccache `
-            -DLAF_BACKEND=skia `
-            -DSKIA_DIR=./skia `
-            -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 `
-            -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
-        shell: pwsh
+          sudo apt-get install -y \
 
-      - name: List Build Directory Contents (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        run: ls -R build
-        shell: bash
+            libx11-dev libxcursor-dev libxi-dev
 
-      - name: List Build Directory Contents (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        run: Get-ChildItem -Recurse build
-        shell: pwsh
+        fi
 
-      - name: Compiling (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        run: |
-          cd build
-          ninja
-        shell: bash
+    - name: Generating Makefiles
 
-      - name: Compiling (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        run: |
-          cd build
-          ninja
-        shell: pwsh
+      shell: bash
 
-      - name: List Build Output (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        run: ls -R build/bin
-        shell: bash
+      run: |
 
-      - name: List Build Output (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        run: Get-ChildItem -Recurse build\bin
-        shell: pwsh
+        if [[ "${{ runner.os }}" == "Windows" ]] ; then
 
-      - name: Upload Artifact (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: aseprite
-          path: |
-            build/bin/data
-            build/bin/aseprite
+          export enable_ccache=off
 
-      - name: Upload Artifact (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: aseprite
-          path: |
-            build\bin\data
-            build\bin\aseprite.exe
+        else
+
+          export enable_ccache=on
+
+        fi
+
+        curl -L https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip --output skia.zip
+
+        7z x skia.zip
+
+        cmake -S . -B build -G Ninja \
+
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+
+          -DENABLE_UI=${{ matrix.enable_ui }} \
+
+          -DENABLE_CCACHE=$enable_ccache \
+
+          -DLAF_BACKEND=skia \
+
+          -DSKIA_DIR=./skia \
+
+          -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 \
+
+          -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
+
+    - name: Compiling
+
+      shell: bash
+
+      run: |
+
+        cd build && ninja
+
+    - uses: actions/upload-artifact@v3
+
+      with:
+
+        name: aseprite
+
+        path: |
+
+          D:/a/aseprite/aseprite/build/bin/data
+
+          D:/a/aseprite/aseprite/build/bin/aseprite.exe
